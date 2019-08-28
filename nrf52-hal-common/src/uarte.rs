@@ -496,22 +496,20 @@ pub mod interrupt_driven {
 
         /// Used to write data into the node, and returns how many bytes were written from `buf`.
         pub fn write_slice(&mut self, buf: &[u8]) -> usize {
-            if buf.len() > Self::MAX_SIZE {
-                self.len = Self::MAX_SIZE as u8;
-            } else {
-                self.len = buf.len() as u8;
-            }
+            let free = Self::MAX_SIZE - self.len as usize;
+            let count = if buf.len() > free { free } else { buf.len() };
 
             // Used to write data into the `MaybeUninit`, safe based on the size check above
             unsafe {
                 ptr::copy_nonoverlapping(
                     buf.as_ptr(),
-                    self.buf.as_mut_ptr() as *mut _,
-                    self.len as usize,
+                    self.buf.as_mut_ptr().offset(self.len as isize) as *mut _,
+                    count,
                 );
             }
 
-            return self.len as usize;
+            self.len = self.len + count as u8;
+            return count;
         }
 
         /// Returns a readable slice which maps to the buffers internal data
