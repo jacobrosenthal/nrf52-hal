@@ -34,7 +34,7 @@ use heapless::{
 
 // Needed for the write! example code
 // use core::fmt::Write;
-// use heapless::pool::singleton::Pool;
+use heapless::pool::singleton::Pool;
 
 use rtfm::app;
 
@@ -99,8 +99,10 @@ const APP: () = {
         // hprintln!("{:?}", &data).unwrap();
 
         // Echo the buffer back without any changes or copying
-        resources.PRODUCER.enqueue(data).unwrap();
-        rtfm::pend(interrupt::UARTE0_UART0);
+        let mut node = UarteDMAPool::alloc().unwrap().init(UarteDMAPoolNode::new());
+        node.write_slice(&b"abc"[..]); // Using raw slice writing
+        node.write_slice(&b"123"[..]); // Using raw slice writing
+        resources.PRODUCER.enqueue(node).unwrap();
     }
 
     #[task]
