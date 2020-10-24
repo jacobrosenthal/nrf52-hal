@@ -78,17 +78,17 @@ const APP: () = {
             rprintln!("avg {:?}", avg);
 
             match avg {
-                0..=4 => {
+                0..=5000 => {
                     let _ = g_led.set_high();
                     let _ = b_led.set_high();
                     let _ = r_led.set_high();
                 }
-                5..=10_337 => {
+                5001..=8_000 => {
                     let _ = g_led.set_low();
                     let _ = b_led.set_high();
                     let _ = r_led.set_high();
                 }
-                10_338..=16_383 => {
+                8_001..=12_000 => {
                     let _ = g_led.set_high();
                     let _ = b_led.set_low();
                     let _ = r_led.set_high();

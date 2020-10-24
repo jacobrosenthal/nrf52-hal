@@ -99,7 +99,7 @@ impl I2S {
         i2s.config.txen.write(|w| w.txen().enabled());
         i2s.config.rxen.write(|w| w.rxen().enabled());
         i2s.config.mode.write(|w| w.mode().slave());
-        i2s.config.swidth.write(|w| w.swidth()._24bit());
+        i2s.config.swidth.write(|w| w.swidth()._16bit());
         i2s.config.align.write(|w| w.align().left());
         i2s.config.format.write(|w| w.format().i2s());
         i2s.config.channels.write(|w| w.channels().stereo());
