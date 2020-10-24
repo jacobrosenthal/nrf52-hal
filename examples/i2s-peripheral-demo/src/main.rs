@@ -2,36 +2,28 @@
 #![no_main]
 
 // I2S `peripheral mode` demo
-// Signal average level indicator using an RGB LED (APA102 on ItsyBitsy nRF52840)
+// Signal average level indicator using INMP441 and an RGB LED
 
-use embedded_hal::blocking::spi::Write;
 use {
     core::{
         panic::PanicInfo,
         sync::atomic::{compiler_fence, Ordering},
     },
-    hal::{
-        gpio::Level,
-        i2s::*,
-        pac::SPIM0,
-        spim::{Frequency, Mode as SPIMode, Phase, Pins, Polarity, Spim},
-    },
+    hal::{gpio::p0, gpio::Level, gpio::Output, gpio::PushPull, i2s::*},
     nrf52840_hal as hal,
+    nrf52840_hal::prelude::OutputPin,
     rtt_target::{rprintln, rtt_init_print},
 };
 
 #[repr(align(4))]
 struct Aligned<T: ?Sized>(T);
 
-const OFF: [u8; 9] = [0x00, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00, 0xFF];
-const GREEN: [u8; 9] = [0x00, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x10, 0x00, 0xFF];
-const ORANGE: [u8; 9] = [0x00, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x10, 0x10, 0xFF];
-const RED: [u8; 9] = [0x00, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x10, 0xFF];
-
 #[rtic::app(device = crate::hal::pac, peripherals = true)]
 const APP: () = {
     struct Resources {
-        rgb: Spim<SPIM0>,
+        g_led: p0::P0_22<Output<PushPull>>,
+        r_led: p0::P0_23<Output<PushPull>>,
+        b_led: p0::P0_24<Output<PushPull>>,
         transfer: Option<Transfer<&'static mut [i16; 128]>>,
     }
 
@@ -45,15 +37,13 @@ const APP: () = {
         rprintln!("Play me some audio...");
 
         let p0 = hal::gpio::p0::Parts::new(ctx.device.P0);
-        let mck_pin = p0.p0_25.into_floating_input().degrade();
-        let sck_pin = p0.p0_24.into_floating_input().degrade();
-        let lrck_pin = p0.p0_16.into_floating_input().degrade();
-        let sdin_pin = p0.p0_14.into_floating_input().degrade();
+        let sck_pin = p0.p0_21.into_floating_input().degrade();
+        let lrck_pin = p0.p0_17.into_floating_input().degrade();
+        let sdin_pin = p0.p0_25.into_floating_input().degrade();
 
-        // Configure I2S reception
         let i2s = I2S::new_peripheral(
             ctx.device.I2S,
-            Some(&mck_pin),
+            None,
             &sck_pin,
             &lrck_pin,
             Some(&sdin_pin),
@@ -61,46 +51,54 @@ const APP: () = {
         );
         i2s.enable_interrupt(I2SEvent::RxPtrUpdated).start();
 
-        // Configure APA102 RGB LED control
-        let p1 = hal::gpio::p1::Parts::new(ctx.device.P1);
-        let rgb_data_pin = p0.p0_08.into_push_pull_output(Level::Low).degrade();
-        let rgb_clk_pin = p1.p1_09.into_push_pull_output(Level::Low).degrade();
+        // Configure RGB LED control
+        let g_led = p0.p0_22.into_push_pull_output(Level::High);
+        let r_led = p0.p0_23.into_push_pull_output(Level::High);
+        let b_led = p0.p0_24.into_push_pull_output(Level::High);
 
-        let rgb = Spim::new(
-            ctx.device.SPIM0,
-            Pins {
-                miso: None,
-                mosi: Some(rgb_data_pin),
-                sck: rgb_clk_pin,
-            },
-            Frequency::M4,
-            SPIMode {
-                polarity: Polarity::IdleLow,
-                phase: Phase::CaptureOnFirstTransition,
-            },
-            0,
-        );
         init::LateResources {
-            rgb,
+            r_led,
+            g_led,
+            b_led,
             transfer: i2s.rx(&mut RX_BUF.0).ok(),
         }
     }
 
-    #[task(binds = I2S, resources = [rgb, transfer])]
+    #[task(binds = I2S, resources = [r_led, g_led, b_led, transfer])]
     fn on_i2s(ctx: on_i2s::Context) {
         let (rx_buf, i2s) = ctx.resources.transfer.take().unwrap().wait();
+        let r_led = ctx.resources.r_led;
+        let g_led = ctx.resources.g_led;
+        let b_led = ctx.resources.b_led;
+
         if i2s.is_event_triggered(I2SEvent::RxPtrUpdated) {
             i2s.reset_event(I2SEvent::RxPtrUpdated);
+
             // Calculate mono summed average of received buffer
             let avg = (rx_buf.iter().map(|x| (*x).abs() as u32).sum::<u32>() / rx_buf.len() as u32)
                 as u16;
-            let color = match avg {
-                0..=4 => &OFF,
-                5..=10_337 => &GREEN,
-                10_338..=16_383 => &ORANGE,
-                _ => &RED,
+            match avg {
+                0..=4 => {
+                    let _ = g_led.set_high();
+                    let _ = b_led.set_high();
+                    let _ = r_led.set_high();
+                }
+                5..=10_337 => {
+                    let _ = g_led.set_low();
+                    let _ = b_led.set_high();
+                    let _ = r_led.set_high();
+                }
+                10_338..=16_383 => {
+                    let _ = g_led.set_high();
+                    let _ = b_led.set_low();
+                    let _ = r_led.set_high();
+                }
+                _ => {
+                    let _ = g_led.set_high();
+                    let _ = b_led.set_high();
+                    let _ = r_led.set_low();
+                }
             };
-            <Spim<SPIM0> as Write<u8>>::write(ctx.resources.rgb, color).ok();
         }
         *ctx.resources.transfer = i2s.rx(rx_buf).ok();
     }
