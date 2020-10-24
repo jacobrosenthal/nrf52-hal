@@ -32,14 +32,15 @@ impl I2S {
         sdin_pin: Option<&Pin<Input<Floating>>>,
         sdout_pin: Option<&Pin<Output<PushPull>>>,
     ) -> Self {
+        i2s.config.rxen.write(|w| w.rxen().enabled());
         i2s.config.mcken.write(|w| w.mcken().enabled());
-        i2s.config.mckfreq.write(|w| w.mckfreq()._32mdiv16());
+        i2s.config.mckfreq.write(|w| w.mckfreq()._32mdiv16()); //2mhz
         i2s.config.ratio.write(|w| w.ratio()._192x());
         i2s.config.mode.write(|w| w.mode().master());
-        i2s.config.swidth.write(|w| w.swidth()._16bit());
+        i2s.config.swidth.write(|w| w.swidth()._24bit());
         i2s.config.align.write(|w| w.align().left());
         i2s.config.format.write(|w| w.format().i2s());
-        i2s.config.channels.write(|w| w.channels().stereo());
+        i2s.config.channels.write(|w| w.channels().left());
 
         if let Some(p) = mck_pin {
             i2s.psel.mck.write(|w| {

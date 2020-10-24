@@ -4,16 +4,12 @@
 // I2S `peripheral mode` demo
 // Signal average level indicator using INMP441 and an RGB LED
 
-use {
-    core::{
-        panic::PanicInfo,
-        sync::atomic::{compiler_fence, Ordering},
-    },
-    hal::{gpio::p0, gpio::Level, gpio::Output, gpio::PushPull, i2s::*},
-    nrf52840_hal as hal,
-    nrf52840_hal::prelude::OutputPin,
-    rtt_target::{rprintln, rtt_init_print},
-};
+use nrf52840_hal as hal;
+use panic_probe as _;
+
+use hal::{gpio::p0, gpio::Level, gpio::Output, gpio::PushPull, i2s::*};
+use nrf52840_hal::prelude::OutputPin;
+use rtt_target::{rprintln, rtt_init_print};
 
 #[repr(align(4))]
 struct Aligned<T: ?Sized>(T);
@@ -37,13 +33,14 @@ const APP: () = {
         rprintln!("Play me some audio...");
 
         let p0 = hal::gpio::p0::Parts::new(ctx.device.P0);
-        let sck_pin = p0.p0_21.into_floating_input().degrade();
-        let lrck_pin = p0.p0_17.into_floating_input().degrade();
+        let mck_pin = p0.p0_16.into_push_pull_output(Level::High).degrade();
+        let sck_pin = p0.p0_21.into_push_pull_output(Level::High).degrade();
+        let lrck_pin = p0.p0_17.into_push_pull_output(Level::High).degrade();
         let sdin_pin = p0.p0_25.into_floating_input().degrade();
 
-        let i2s = I2S::new_peripheral(
+        let i2s = I2S::new_controller(
             ctx.device.I2S,
-            None,
+            Some(&mck_pin),
             &sck_pin,
             &lrck_pin,
             Some(&sdin_pin),
@@ -77,6 +74,9 @@ const APP: () = {
             // Calculate mono summed average of received buffer
             let avg = (rx_buf.iter().map(|x| (*x).abs() as u32).sum::<u32>() / rx_buf.len() as u32)
                 as u16;
+
+            rprintln!("avg {:?}", avg);
+
             match avg {
                 0..=4 => {
                     let _ = g_led.set_high();
@@ -103,13 +103,3 @@ const APP: () = {
         *ctx.resources.transfer = i2s.rx(rx_buf).ok();
     }
 };
-
-#[inline(never)]
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    cortex_m::interrupt::disable();
-    rprintln!("{}", info);
-    loop {
-        compiler_fence(Ordering::SeqCst);
-    }
-}
